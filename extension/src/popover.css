@@ -1,4 +1,4 @@
-/* YT TL;DW popover. Matches YouTube's menus: Roboto, 12px radius, soft
+/* Precap popover. Matches YouTube's menus: Roboto, 12px radius, soft
    shadow, #fff / #282828 surfaces, YouTube's text greys. Dark follows
    html[dark], which YouTube sets for its dark theme. */
 
@@ -63,10 +63,13 @@ html[dark] .tldw-pop {
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
+/* Brand badge, top left: the Precap mark and wordmark, small and muted.
+   The mark's top band stays marker yellow; its lower bands and the wordmark
+   share the head's muted text colour, as the lockup's do in slate. */
 .tldw-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin: 0 0 8px;
   color: #606060;
   font-size: 12px;
@@ -78,10 +81,30 @@ html[dark] .tldw-head {
   color: #aaa;
 }
 
-.tldw-head svg {
-  width: 13px;
-  height: 13px;
+.tldw-mark {
   flex: none;
+  width: 10.4px; /* 12px tall at the mark's 69.282:80 ratio */
+  height: 12px;
+}
+
+.tldw-mark-top {
+  fill: #ffc53d;
+  stroke: #ffc53d;
+}
+
+.tldw-mark-rest {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+/* Outlined wordmark (BRAND_WORDMARK in content.js), sized by its cap height:
+   9px keeps the heavy outlines' counters open (8.5px matches the Roboto
+   stand-in's caps but fills in). */
+.tldw-wordmark {
+  flex: none;
+  width: auto;
+  height: 9px;
+  overflow: visible;
   fill: currentColor;
 }
 
@@ -94,7 +117,7 @@ html[dark] .tldw-head {
 .tldw-list li {
   position: relative;
   margin: 0;
-  padding: 0 0 0 19px; /* text lines up with the "Summary" label */
+  padding: 0 0 0 14px; /* text lines up with the wordmark */
   text-wrap: pretty;
 }
 
@@ -105,7 +128,7 @@ html[dark] .tldw-head {
 .tldw-list li::before {
   content: "";
   position: absolute;
-  left: 5px; /* centred under the sparkle */
+  left: 2px; /* centred under the mark */
   top: 8px;
   width: 4px;
   height: 4px;
@@ -126,6 +149,40 @@ html[dark] .tldw-head {
 
 html[dark] .tldw-msg {
   color: #aaa;
+}
+
+/* Second, smaller line under a message, with an optional link. */
+.tldw-note {
+  margin: 4px 0 0;
+  color: #606060;
+  font-size: 12px;
+  line-height: 16px;
+  text-wrap: pretty;
+}
+
+html[dark] .tldw-note {
+  color: #aaa;
+}
+
+.tldw-link {
+  color: #065fd4;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tldw-link:hover {
+  text-decoration: underline;
+}
+
+.tldw-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+html[dark] .tldw-link {
+  color: #3ea6ff;
 }
 
 /* Message with an optional action on the right. */
