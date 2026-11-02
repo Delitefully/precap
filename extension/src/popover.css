@@ -1,12 +1,18 @@
 /* Precap popover. Matches YouTube's menus: Roboto, 12px radius, soft
    shadow, #fff / #282828 surfaces, YouTube's text greys. Dark follows
-   html[dark], which YouTube sets for its dark theme. */
+   html[dark], which YouTube sets for its dark theme, by redefining the
+   colour properties below. */
 
 .tldw-pop {
+  --tldw-muted: #606060;
+  --tldw-link: #065fd4;
+  --tldw-btn: rgba(0, 0, 0, 0.05);
+  --tldw-btn-hover: rgba(0, 0, 0, 0.1);
+  --tldw-btn-active: rgba(0, 0, 0, 0.15);
+  --tldw-skel: rgba(0, 0, 0, 0.08);
+  --tldw-skel-dot: rgba(0, 0, 0, 0.12);
   position: fixed;
   z-index: 2100; /* above the masthead (2020) and miniplayer (2030), below YouTube's menus */
-  top: 0;
-  left: 0;
   box-sizing: border-box;
   width: 320px;
   max-width: calc(100vw - 16px);
@@ -58,6 +64,13 @@
 }
 
 html[dark] .tldw-pop {
+  --tldw-muted: #aaa;
+  --tldw-link: #3ea6ff;
+  --tldw-btn: rgba(255, 255, 255, 0.1);
+  --tldw-btn-hover: rgba(255, 255, 255, 0.2);
+  --tldw-btn-active: rgba(255, 255, 255, 0.25);
+  --tldw-skel: rgba(255, 255, 255, 0.1);
+  --tldw-skel-dot: rgba(255, 255, 255, 0.14);
   background: #282828;
   color: #f1f1f1;
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -71,37 +84,33 @@ html[dark] .tldw-pop {
   align-items: center;
   gap: 4px;
   margin: 0 0 8px;
-  color: #606060;
+  color: var(--tldw-muted);
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
 }
 
-html[dark] .tldw-head {
-  color: #aaa;
-}
-
 .tldw-mark {
-  flex: none;
   width: 10.4px; /* 12px tall at the mark's 69.282:80 ratio */
   height: 12px;
 }
 
-.tldw-mark-top {
-  fill: #ffc53d;
-  stroke: #ffc53d;
-}
-
-.tldw-mark-rest {
+.tldw-mark polygon {
   fill: currentColor;
   stroke: currentColor;
+  stroke-width: 13.6px;
+  stroke-linejoin: round;
+}
+
+.tldw-mark > :first-child polygon {
+  fill: #ffc53d;
+  stroke: #ffc53d;
 }
 
 /* Outlined wordmark (BRAND_WORDMARK in content.js), sized by its cap height:
    9px keeps the heavy outlines' counters open (8.5px matches the Roboto
    stand-in's caps but fills in). */
 .tldw-wordmark {
-  flex: none;
   width: auto;
   height: 9px;
   overflow: visible;
@@ -144,28 +153,20 @@ html[dark] .tldw-head {
 }
 
 .tldw-msg {
-  color: #606060;
-}
-
-html[dark] .tldw-msg {
-  color: #aaa;
+  color: var(--tldw-muted);
 }
 
 /* Second, smaller line under a message, with an optional link. */
 .tldw-note {
   margin: 4px 0 0;
-  color: #606060;
+  color: var(--tldw-muted);
   font-size: 12px;
   line-height: 16px;
   text-wrap: pretty;
 }
 
-html[dark] .tldw-note {
-  color: #aaa;
-}
-
 .tldw-link {
-  color: #065fd4;
+  color: var(--tldw-link);
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -181,10 +182,6 @@ html[dark] .tldw-note {
   border-radius: 2px;
 }
 
-html[dark] .tldw-link {
-  color: #3ea6ff;
-}
-
 /* Message with an optional action on the right. */
 .tldw-row {
   display: flex;
@@ -195,14 +192,13 @@ html[dark] .tldw-link {
 
 /* YouTube's small tonal button. */
 .tldw-retry {
-  flex: none;
   height: 32px;
   margin: 0;
   padding: 0 14px;
   border: 0;
   border-radius: 16px;
-  background: rgba(0, 0, 0, 0.05);
-  color: #0f0f0f;
+  background: var(--tldw-btn);
+  color: inherit;
   font: inherit;
   font-weight: 500;
   line-height: 32px;
@@ -210,29 +206,16 @@ html[dark] .tldw-link {
 }
 
 .tldw-retry:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--tldw-btn-hover);
 }
 
 .tldw-retry:active {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--tldw-btn-active);
 }
 
 .tldw-retry:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
-}
-
-html[dark] .tldw-retry {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f1f1f1;
-}
-
-html[dark] .tldw-retry:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-html[dark] .tldw-retry:active {
-  background: rgba(255, 255, 255, 0.25);
 }
 
 /* Loading: the outline of a typical answer, three bullets of two lines,
@@ -247,24 +230,15 @@ html[dark] .tldw-retry:active {
 }
 
 .tldw-skel-list li::before {
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--tldw-skel-dot);
   opacity: 1;
 }
 
 .tldw-skel {
-  display: block;
   height: 10px;
   margin: 5px 0;
   border-radius: 5px;
-  background: rgba(0, 0, 0, 0.08);
-}
-
-html[dark] .tldw-skel-list li::before {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-html[dark] .tldw-skel {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--tldw-skel);
 }
 
 @keyframes tldw-pulse {
@@ -286,10 +260,8 @@ html[dark] .tldw-skel {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tldw-pop,
-  .tldw-pop.tldw-in {
+  .tldw-pop {
     transform: none;
-    transition-property: opacity;
   }
 
   .tldw-skel-list {

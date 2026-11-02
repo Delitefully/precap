@@ -19,8 +19,7 @@
     {
       "matches": ["https://www.youtube.com/*"],
       "js": ["src/content.js"],
-      "css": ["src/popover.css"],
-      "run_at": "document_idle"
+      "css": ["src/popover.css"]
     }
   ]
 }

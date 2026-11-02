@@ -16,8 +16,6 @@
 // the fixed prompt about a valid videoId, never pick a URL, endpoint or body.
 (() => {
   "use strict";
-  if (window.__tldwMain) return;
-  window.__tldwMain = true;
 
   const ORIGIN = location.origin;
   const nativeFetch = window.fetch.bind(window);
@@ -44,10 +42,10 @@
     /(not|isn't|is not) (yet )?available (in your (country|region|language)|for your account)/i;
 
   const session = { unavailable: false, askSeen: false, probe: null };
-  const inflight = new Map(); // id -> { ctrl, phase, since, keep }
+  const inflight = new Map(); // id -> { ctrl, answerAt, timedOut }
   const askTimes = []; // performance.now() of each Ask question in the last minute
 
-  const cfg = (k) => (window.ytcfg && typeof window.ytcfg.get === "function" ? window.ytcfg.get(k) : undefined);
+  const cfg = (k) => window.ytcfg?.get?.(k);
   const log = (...a) => { if (DEBUG) console.debug("[tldw]", ...a); };
 
   function asksLastMinute() {
@@ -64,11 +62,6 @@
     return null;
   }
 
-  async function sha1Hex(str) {
-    const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(str));
-    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
-  }
-
   // Mirrors YouTube's own Authorization header:
   //   SAPISIDHASH <ts>_<sha1>[_u] SAPISID1PHASH ... SAPISID3PHASH ...
   // where sha1 = SHA1("[<USER_SESSION_ID> ]<ts> <cookie> <origin>").
@@ -83,20 +76,11 @@
     for (const [name, value] of pairs) {
       if (!value) continue;
       const ts = Math.floor(Date.now() / 1000);
-      const input = (userSessionId ? [userSessionId, ts, value, ORIGIN] : [ts, value, ORIGIN]).join(" ");
-      const token = [ts, await sha1Hex(input)];
-      if (userSessionId) token.push("u");
-      parts.push(name + " " + token.join("_"));
+      const input = new TextEncoder().encode([userSessionId, ts, value, ORIGIN].filter(Boolean).join(" "));
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-1", input)), (b) => b.toString(16).padStart(2, "0")).join("");
+      parts.push(`${name} ${ts}_${hash}${userSessionId ? "_u" : ""}`);
     }
-    return parts.length ? parts.join(" ") : null;
-  }
-
-  function isLoggedIn() {
-    return cfg("LOGGED_IN") === true && !!(getCookie("SAPISID") || getCookie("__Secure-3PAPISID"));
-  }
-
-  class HttpError extends Error {
-    constructor(status) { super("HTTP " + status); this.status = status; }
+    return parts.join(" ");
   }
 
   async function innertube(endpoint, body, signal) {
@@ -122,12 +106,11 @@
     // Absolute URL: a relative one would follow a <base href> on the page.
     const res = await nativeFetch(`${ORIGIN}/youtubei/v1/${endpoint}?prettyPrint=false`, {
       method: "POST",
-      credentials: "same-origin",
       headers,
-      body: JSON.stringify({ context: structuredClone(context), ...body }),
+      body: JSON.stringify({ context, ...body }),
       signal,
     });
-    if (!res.ok) throw new HttpError(res.status);
+    if (!res.ok) throw new Error("HTTP " + res.status);
     return res.json();
   }
 
@@ -152,39 +135,24 @@
   function askTokens(nextJson) {
     const panel = find(nextJson, (o) => o.panelIdentifier === "PAyouchat" && o.engagementPanel);
     if (!panel) return null;
-    const send = find(panel, (o) => o.sendUserQueryCommand);
-    const query = send?.sendUserQueryCommand?.innertubeCommand?.continuationCommand?.token || null;
-    const chips = find(panel, (o) => Array.isArray(o.chipData));
-    const first = chips?.chipData?.find((c) => c.continuation);
-    const summarize = first?.continuation || null;
+    const query = find(panel, (o) => o.sendUserQueryCommand)?.sendUserQueryCommand.innertubeCommand?.continuationCommand?.token;
+    const summarize = find(panel, (o) => Array.isArray(o.chipData))?.chipData.find((c) => c.continuation)?.continuation;
     return query || summarize ? { query, summarize } : null;
   }
 
+  // The longest answer text in a get_panel response (first one on a tie).
   function answerText(panelJson) {
-    const texts = [];
-    const stack = [panelJson];
-    while (stack.length) {
-      const o = stack.pop();
-      if (!o || typeof o !== "object") continue;
+    let best = null;
+    find(panelJson, (o) => {
       const t = o.youChatItemViewModel?.text?.content;
-      if (typeof t === "string" && t.trim()) texts.push(t.trim());
-      for (const k in o) if (o[k] && typeof o[k] === "object") stack.push(o[k]);
-    }
-    return texts.length ? texts.reduce((a, b) => (b.length > a.length ? b : a)) : null;
-  }
-
-  async function probeAskAvailable(signal) {
-    if (!session.probe) {
-      session.probe = innertube("next", { videoId: PROBE_VIDEO_ID }, signal)
-        .then((j) => !!askTokens(j))
-        .catch((e) => { session.probe = null; throw e; });
-    }
-    return session.probe;
+      if (typeof t === "string" && t.trim().length > (best?.length ?? 0)) best = t.trim();
+    });
+    return best;
   }
 
   async function summarize(id, videoId) {
     const ctrl = new AbortController();
-    const entry = { ctrl, phase: "next", since: performance.now(), keep: false, timedOut: false };
+    const entry = { ctrl, answerAt: 0, timedOut: false };
     inflight.set(id, entry);
     const timer = setTimeout(() => { entry.timedOut = true; ctrl.abort(); }, TIMEOUT_MS);
     try {
@@ -192,20 +160,21 @@
         await new Promise((r) => setTimeout(r, 600));
         return { status: FORCE_STATUS };
       }
-      if (!isLoggedIn()) return { status: "logged_out" };
+      if (cfg("LOGGED_IN") !== true || !(getCookie("SAPISID") || getCookie("__Secure-3PAPISID"))) return { status: "logged_out" };
       if (session.unavailable) return { status: "unavailable" };
       if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
 
       const next = await innertube("next", { videoId }, ctrl.signal);
       if (next?.responseContext?.mainAppWebResponseContext?.loggedOut === true) return { status: "logged_out" };
-      if (!next || typeof next !== "object" || (!next.contents && !next.playerOverlays)) {
+      if (!next?.contents && !next?.playerOverlays) {
         return { status: "error", detail: "unexpected next response" };
       }
       const tokens = askTokens(next);
       if (!tokens) {
         if (!session.askSeen) {
-          const ok = await probeAskAvailable(ctrl.signal).catch(() => null);
-          if (ok === false) { session.unavailable = true; return { status: "unavailable" }; }
+          session.probe ??= innertube("next", { videoId: PROBE_VIDEO_ID }, ctrl.signal)
+            .then((j) => !!askTokens(j), () => { session.probe = null; return null; });
+          if ((await session.probe) === false) { session.unavailable = true; return { status: "unavailable" }; }
         }
         return { status: "no_ask" };
       }
@@ -213,8 +182,7 @@
 
       if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
       askTimes.push(performance.now());
-      entry.phase = "answer";
-      entry.since = performance.now();
+      entry.answerAt = performance.now();
       const inputComposerFormData = { clientMessageId: "youchat-" + Date.now(), playerOffsetMs: "0" };
       if (tokens.query) inputComposerFormData.userInputText = PROMPT;
       const panel = await innertube(
@@ -225,19 +193,14 @@
       const text = answerText(panel);
       if (!text) return { status: "error", detail: "no answer in response" };
       if (REGION_RE.test(text) && text.length < 300) { session.unavailable = true; return { status: "unavailable" }; }
-      return { status: "ok", text, custom: !!tokens.query };
+      return { status: "ok", text };
     } catch (e) {
       if (e?.name === "AbortError") return entry.timedOut ? { status: "error", detail: "timeout" } : { status: "aborted" };
-      if (e instanceof HttpError) return { status: "error", detail: e.message, http: e.status };
       return { status: "error", detail: String(e?.message || e) };
     } finally {
       clearTimeout(timer);
       inflight.delete(id);
     }
-  }
-
-  function reply(id, result) {
-    window.postMessage({ tldw: 1, dir: "res", id, ...result }, ORIGIN);
   }
 
   window.addEventListener("message", (ev) => {
@@ -247,16 +210,15 @@
     if (m.type === "summarize") {
       if (typeof m.videoId !== "string" || !/^[\w-]{11}$/.test(m.videoId)) return;
       log("summarize", m.videoId);
-      summarize(m.id, m.videoId).then((r) => { log("result", m.videoId, r.status, r.detail || ""); reply(m.id, r); });
+      summarize(m.id, m.videoId).then((r) => {
+        log("result", m.videoId, r.status, r.detail || "");
+        window.postMessage({ tldw: 1, dir: "res", id: m.id, ...r }, ORIGIN);
+      });
     } else if (m.type === "cancel") {
       const e = inflight.get(m.id);
       if (!e) return;
-      if (e.phase === "answer" && performance.now() - e.since > KEEP_AFTER_MS) {
-        e.keep = true; // almost back: let it land in the cache
-        log("cancel ignored, almost done", m.id);
-      } else {
-        e.ctrl.abort();
-      }
+      if (e.answerAt && performance.now() - e.answerAt > KEEP_AFTER_MS) log("cancel ignored, almost done", m.id);
+      else e.ctrl.abort();
     }
   });
 })();
