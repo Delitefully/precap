@@ -2,18 +2,17 @@
 
 <h1 align="center">Precap</h1>
 
-<p align="center">Hover a video on YouTube for a second and see what it's about, in two or three bullets.<br>
-No API keys: it asks YouTube's own built-in Ask (Gemini) feature.</p>
+<p align="center">Hover any video. Get the point before you press play.</p>
 
 <p align="center"><img src="docs/screenshots/dark-summary.jpg" width="640" alt="A summary popover next to a hovered video card on YouTube"></p>
 
 ## Install
 
 1. Open `chrome://extensions` and turn on **Developer mode** (top right).
-2. Click **Load unpacked** and pick the `extension/` folder of this repo.
+2. Click **Load unpacked** and pick the `extension/` folder of this repo. It appears as **Precap for YouTube**.
 3. Open (or reload) YouTube while signed in, go to Home or Subscriptions, and rest the mouse on a video for about a second.
 
-To update, `git pull` and press the reload icon on the extension's card.
+To update, `git pull` and press the reload icon on the Precap for YouTube card.
 
 ## How it works
 

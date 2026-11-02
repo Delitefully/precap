@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Precap",
+  "name": "Precap for YouTube",
+  "short_name": "Precap",
   "version": "0.1.0",
-  "description": "Hover a video on YouTube and see its point in 2–3 bullets, from YouTube's own Ask. Free: no API key, no subscription.",
+  "description": "Hover any video. Get the point before you press play.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
