@@ -1,19 +1,14 @@
-// Precap - page (MAIN world) half.
-//
-// Runs inside youtube.com's own JS context so it can read `ytcfg` and call
-// InnerTube with the page's session, the same way YouTube's own code does.
-// It never stores or forwards credentials: the auth header is computed per
-// request from the page's cookies and sent only to www.youtube.com.
+// Precap - page half (MAIN world). Runs in youtube.com's own JS world so it
+// can read `ytcfg` and call InnerTube with the page's session, the same way
+// YouTube's own code does. It exposes nothing on `window`, and never stores or
+// forwards credentials: the auth header is computed per request from the
+// page's cookies and sent only to www.youtube.com.
 //
 // Protocol (window.postMessage, same window, same origin):
 //   UI -> page: { tldw: 1, dir: "req", type: "summarize", id, videoId }
 //               { tldw: 1, dir: "req", type: "cancel", id }
 //   page -> UI: { tldw: 1, dir: "res", id, status, text?, detail? }
 //   status: "ok" | "logged_out" | "unavailable" | "no_ask" | "error" | "aborted"
-// Only same-window, same-origin messages are accepted, so iframes (ads,
-// embeds) cannot use the bridge. Other scripts in this page's own JS world can,
-// but they already have the page's full session; the bridge only lets them ask
-// the fixed prompt about a valid videoId, never pick a URL, endpoint or body.
 (() => {
   "use strict";
 
@@ -40,6 +35,8 @@
   const FORCE_STATUS = "";
   const REGION_RE =
     /(not|isn't|is not) (yet )?available (in your (country|region|language)|for your account)/i;
+  const VIDEO_ID_RE = /^[\w-]{11}$/;
+  const RATE_LIMITED = { status: "error", detail: "local rate limit" };
 
   const session = { unavailable: false, askSeen: false, probe: null };
   const inflight = new Map(); // id -> { ctrl, answerAt, timedOut }
@@ -54,6 +51,8 @@
     return askTimes.length >= MAX_ASKS_PER_MIN;
   }
 
+  // ---------- auth headers ----------
+
   function getCookie(name) {
     for (const part of document.cookie.split(";")) {
       const s = part.trim();
@@ -61,6 +60,7 @@
     }
     return null;
   }
+
   const sapisid = () => getCookie("SAPISID") || getCookie("__Secure-3PAPISID");
 
   // Mirrors YouTube's own Authorization header:
@@ -84,9 +84,7 @@
     return parts.join(" ");
   }
 
-  async function innertube(endpoint, body, signal) {
-    const context = cfg("INNERTUBE_CONTEXT");
-    if (!context) throw new Error("no INNERTUBE_CONTEXT");
+  async function innertubeHeaders(context) {
     const headers = {
       "Content-Type": "application/json",
       "X-Origin": ORIGIN,
@@ -103,7 +101,15 @@
     }
     const pageId = cfg("DELEGATED_SESSION_ID");
     if (pageId) headers["X-Goog-PageId"] = String(pageId);
+    return headers;
+  }
 
+  // ---------- InnerTube calls ----------
+
+  async function innertube(endpoint, body, signal) {
+    const context = cfg("INNERTUBE_CONTEXT");
+    if (!context) throw new Error("no INNERTUBE_CONTEXT");
+    const headers = await innertubeHeaders(context);
     // Absolute URL: a relative one would follow a <base href> on the page.
     const res = await nativeFetch(`${ORIGIN}/youtubei/v1/${endpoint}?prettyPrint=false`, {
       method: "POST",
@@ -114,6 +120,20 @@
     if (!res.ok) throw new Error("HTTP " + res.status);
     return res.json();
   }
+
+  // Asks the prompt through the Ask panel's free-text box, or falls back to
+  // its "Summarize the video" chip.
+  function askPanel(tokens, signal) {
+    const inputComposerFormData = { clientMessageId: "youchat-" + Date.now(), playerOffsetMs: "0" };
+    if (tokens.query) inputComposerFormData.userInputText = PROMPT;
+    return innertube(
+      "get_panel",
+      { continuation: tokens.query || tokens.summarize, formData: { inputComposerFormData } },
+      signal
+    );
+  }
+
+  // ---------- answer parsing ----------
 
   // Depth-first search for the first object that satisfies `pred`.
   function find(root, pred) {
@@ -130,7 +150,7 @@
     return null;
   }
 
-  // From a `next` response, pull the tokens the Ask panel would use:
+  // From a `next` response, the tokens the Ask panel would use:
   //   query: the free-text box's continuation (custom prompt)
   //   summarize: the "Summarize the video" chip's continuation (fallback)
   function askTokens(nextJson) {
@@ -151,48 +171,54 @@
     return best;
   }
 
+  // ---------- summarize ----------
+
+  // A video without Ask: "no_ask", or "unavailable" when the probe video has
+  // no Ask either (checked once, and only until any video has shown Ask).
+  async function withoutAsk(signal) {
+    if (!session.askSeen) {
+      session.probe ??= innertube("next", { videoId: PROBE_VIDEO_ID }, signal)
+        .then((j) => !!askTokens(j), () => { session.probe = null; });
+      if ((await session.probe) === false) { session.unavailable = true; return { status: "unavailable" }; }
+    }
+    return { status: "no_ask" };
+  }
+
+  async function askAbout(videoId, entry) {
+    const { signal } = entry.ctrl;
+    if (FORCE_STATUS) {
+      await new Promise((r) => setTimeout(r, 600));
+      return { status: FORCE_STATUS };
+    }
+    if (cfg("LOGGED_IN") !== true || !sapisid()) return { status: "logged_out" };
+    if (session.unavailable) return { status: "unavailable" };
+    if (atCap()) return RATE_LIMITED;
+
+    const next = await innertube("next", { videoId }, signal);
+    if (next?.responseContext?.mainAppWebResponseContext?.loggedOut === true) return { status: "logged_out" };
+    if (!next?.contents && !next?.playerOverlays) return { status: "error", detail: "unexpected next response" };
+    const tokens = askTokens(next);
+    if (!tokens) return withoutAsk(signal);
+    session.askSeen = true;
+
+    if (atCap()) return RATE_LIMITED;
+    askTimes.push(performance.now());
+    entry.answerAt = performance.now();
+    const text = answerText(await askPanel(tokens, signal));
+    if (!text) return { status: "error", detail: "no answer in response" };
+    if (REGION_RE.test(text) && text.length < 300) { session.unavailable = true; return { status: "unavailable" }; }
+    return { status: "ok", text };
+  }
+
+  // Tracks the request so it can be cancelled or time out, and turns any
+  // failure into a status.
   async function summarize(id, videoId) {
     const ctrl = new AbortController();
     const entry = { ctrl, answerAt: 0, timedOut: false };
     inflight.set(id, entry);
     const timer = setTimeout(() => { entry.timedOut = true; ctrl.abort(); }, TIMEOUT_MS);
     try {
-      if (FORCE_STATUS) {
-        await new Promise((r) => setTimeout(r, 600));
-        return { status: FORCE_STATUS };
-      }
-      if (cfg("LOGGED_IN") !== true || !sapisid()) return { status: "logged_out" };
-      if (session.unavailable) return { status: "unavailable" };
-      if (atCap()) return { status: "error", detail: "local rate limit" };
-
-      const next = await innertube("next", { videoId }, ctrl.signal);
-      if (next?.responseContext?.mainAppWebResponseContext?.loggedOut === true) return { status: "logged_out" };
-      if (!next?.contents && !next?.playerOverlays) return { status: "error", detail: "unexpected next response" };
-      const tokens = askTokens(next);
-      if (!tokens) {
-        if (!session.askSeen) {
-          session.probe ??= innertube("next", { videoId: PROBE_VIDEO_ID }, ctrl.signal)
-            .then((j) => !!askTokens(j), () => { session.probe = null; });
-          if ((await session.probe) === false) { session.unavailable = true; return { status: "unavailable" }; }
-        }
-        return { status: "no_ask" };
-      }
-      session.askSeen = true;
-
-      if (atCap()) return { status: "error", detail: "local rate limit" };
-      askTimes.push(performance.now());
-      entry.answerAt = performance.now();
-      const inputComposerFormData = { clientMessageId: "youchat-" + Date.now(), playerOffsetMs: "0" };
-      if (tokens.query) inputComposerFormData.userInputText = PROMPT;
-      const panel = await innertube(
-        "get_panel",
-        { continuation: tokens.query || tokens.summarize, formData: { inputComposerFormData } },
-        ctrl.signal
-      );
-      const text = answerText(panel);
-      if (!text) return { status: "error", detail: "no answer in response" };
-      if (REGION_RE.test(text) && text.length < 300) { session.unavailable = true; return { status: "unavailable" }; }
-      return { status: "ok", text };
+      return await askAbout(videoId, entry);
     } catch (e) {
       if (e?.name === "AbortError") return entry.timedOut ? { status: "error", detail: "timeout" } : { status: "aborted" };
       return { status: "error", detail: String(e?.message || e) };
@@ -202,22 +228,33 @@
     }
   }
 
+  function cancel(id) {
+    const e = inflight.get(id);
+    if (!e) return;
+    if (e.answerAt && performance.now() - e.answerAt > KEEP_AFTER_MS) log("cancel ignored, almost done", id);
+    else e.ctrl.abort();
+  }
+
+  // ---------- messages ----------
+
+  // Only same-window, same-origin messages are accepted, so iframes (ads,
+  // embeds) cannot use the bridge. Other scripts in this page's own JS world
+  // can, but they already have the page's full session; the bridge only lets
+  // them ask the fixed prompt about a valid videoId, never pick a URL,
+  // endpoint or body.
   window.addEventListener("message", (ev) => {
     if (ev.source !== window || ev.origin !== ORIGIN) return;
     const m = ev.data;
     if (!m || m.tldw !== 1 || m.dir !== "req" || typeof m.id !== "string") return;
     if (m.type === "summarize") {
-      if (typeof m.videoId !== "string" || !/^[\w-]{11}$/.test(m.videoId)) return;
+      if (typeof m.videoId !== "string" || !VIDEO_ID_RE.test(m.videoId)) return;
       log("summarize", m.videoId);
       summarize(m.id, m.videoId).then((r) => {
         log("result", m.videoId, r.status, r.detail || "");
         window.postMessage({ tldw: 1, dir: "res", id: m.id, ...r }, ORIGIN);
       });
     } else if (m.type === "cancel") {
-      const e = inflight.get(m.id);
-      if (!e) return;
-      if (e.answerAt && performance.now() - e.answerAt > KEEP_AFTER_MS) log("cancel ignored, almost done", m.id);
-      else e.ctrl.abort();
+      cancel(m.id);
     }
   });
 })();
