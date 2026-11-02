@@ -19,7 +19,7 @@
     },
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["src/content.js"],
+      "js": ["src/config.js", "src/youtube.js", "src/bridge.js", "src/popover.js", "src/hover.js", "src/content.js"],
       "css": ["src/popover.css"]
     }
   ]
