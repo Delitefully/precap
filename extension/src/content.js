@@ -37,20 +37,21 @@
 
   const cache = new Map(); // videoId -> { status: "ok", bullets | text } | { status: "no_ask" }
   const pending = new Map(); // request id -> videoId
-  let sessionStatus = null; // "logged_out" | "unavailable" once known
+  let sessionResult = null; // { status: "logged_out" | "unavailable" } once known
   let seq = 0;
 
   let hoverCard = null; // card under the pointer or holding keyboard focus
   let dwellTimer = 0;
-  let dwellAt = null; // pointer position the dwell is measured from
-  let lastPointer = null; // last pointermove position
+  let dwellAt = null; // pointer event (x, y) the dwell is measured from
+  let lastPointer = null; // last pointermove event
   // Set when the page scrolls: a card that slides under a still pointer is
   // not a hover, so no dwell starts until the pointer really moves.
   let parkedAt = null;
   let closeTimer = 0;
   let hideTimer = 0;
-  let open = null; // { card, videoId, reqId, retried }
-  let opener = null; // element whose keyboard focus opened the popover
+  // The open popover: { card, videoId, reqId, retried, opener }, where opener
+  // is the element whose keyboard focus opened it (null for a hover).
+  let open = null;
   let quietFocus = null; // element being refocused by us; its focusin is ignored
 
   // ---------- helpers ----------
@@ -176,7 +177,7 @@
     open.retried = true;
     render({ status: "loading" });
     request();
-    if (hadFocus && opener) opener.focus({ preventScroll: true }); // the button is gone
+    if (hadFocus && open?.opener) open.opener.focus({ preventScroll: true }); // the button is gone
   });
 
   function el(tag, cls, text) {
@@ -209,24 +210,19 @@
       else body.appendChild(el("p", "tldw-text", r.text));
       said = "Summary: " + (r.bullets ? r.bullets.join(". ") : r.text);
     } else {
-      const canRetry = r.status === "error" && !open.retried;
-      said = MESSAGES[r.status === "error" && !canRetry ? "error_final" : r.status];
+      const key = r.status === "error" && open.retried ? "error_final" : r.status;
+      said = MESSAGES[key];
       const row = body.appendChild(el("div", "tldw-row"));
       row.appendChild(el("p", "tldw-msg", said));
-      if (canRetry) {
-        const b = el("button", "tldw-retry", "Retry");
-        b.type = "button";
-        row.appendChild(b);
-      }
-      if (r.status === "unavailable") {
-        const note = el("p", "tldw-note", UNAVAILABLE_NOTE + " ");
-        const a = el("a", "tldw-link", ASK_HELP_TEXT);
-        a.href = ASK_HELP_URL;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.setAttribute("aria-label", ASK_HELP_TEXT + " (YouTube Help, opens in a new tab)");
-        note.appendChild(a);
-        body.appendChild(note);
+      if (key === "error") row.appendChild(Object.assign(el("button", "tldw-retry", "Retry"), { type: "button" }));
+      if (key === "unavailable") {
+        const link = Object.assign(el("a", "tldw-link", ASK_HELP_TEXT), {
+          href: ASK_HELP_URL,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          ariaLabel: ASK_HELP_TEXT + " (YouTube Help, opens in a new tab)",
+        });
+        body.appendChild(el("p", "tldw-note", UNAVAILABLE_NOTE + " ")).appendChild(link);
         said += ". " + UNAVAILABLE_NOTE;
       }
     }
@@ -300,22 +296,16 @@
     const videoId = videoIdOf(card);
     if (!videoId) return;
     closeNow();
-    open = { card, videoId, reqId: null, retried: false };
     const a = document.activeElement;
-    opener = card.contains(a) && a.matches(":focus-visible") ? a : null;
+    const opener = card.contains(a) && a.matches(":focus-visible") ? a : null;
+    open = { card, videoId, reqId: null, retried: false, opener };
     if (!pop.isConnected) document.body.append(pop, live);
-    // Start from the hidden state even if the last popover is still fading
-    // out, so it never slides over from the previous card.
     clearTimeout(hideTimer);
-    pop.hidden = true;
-    void pop.offsetWidth;
     pop.hidden = false;
 
-    const cached = cache.get(videoId);
-    if (cached) {
-      render(cached);
-    } else if (sessionStatus) {
-      render({ status: sessionStatus });
+    const known = cache.get(videoId) || sessionResult;
+    if (known) {
+      render(known);
     } else {
       open.reqId = [...pending].find(([, v]) => v === videoId)?.[0];
       render({ status: "loading" });
@@ -328,17 +318,16 @@
     cancelClose();
     if (!open) return;
     if (open.reqId) post({ type: "cancel", id: open.reqId });
+    const { opener } = open;
     open = null;
     // Focus inside a closing popover would be lost: hand it back to the card.
-    if (opener && opener.isConnected && pop.contains(document.activeElement)) {
+    if (opener?.isConnected && pop.contains(document.activeElement)) {
       quietFocus = opener;
       opener.focus({ preventScroll: true });
       quietFocus = null;
     }
-    opener = null;
     live.textContent = "";
     pop.classList.remove("tldw-in");
-    clearTimeout(hideTimer);
     hideTimer = setTimeout(() => { pop.hidden = true; }, FADE_OUT_MS + 20);
   }
 
@@ -392,11 +381,8 @@
     if (m.status === "ok") {
       result = typeof m.text === "string" && m.text.trim() ? parseAnswer(m.text) : { status: "error" };
     }
-    if (result.status === "ok" || result.status === "no_ask") {
-      cache.set(videoId, result);
-    } else if (result.status === "logged_out" || result.status === "unavailable") {
-      sessionStatus = result.status;
-    }
+    if (result.status === "ok" || result.status === "no_ask") cache.set(videoId, result);
+    else if (result.status === "logged_out" || result.status === "unavailable") sessionResult = result;
 
     if (open && open.reqId === m.id) {
       open.reqId = null;
@@ -409,7 +395,7 @@
   // ---------- hover tracking (delegated) ----------
 
   // Pointer and keyboard focus both land here: `card` is what the user is now
-  // on (null for anything else), `at` the pointer position or null for focus.
+  // on (null for anything else), `at` the pointer event or null for focus.
   // The open popover counts as part of its card.
   function aim(card, at) {
     if (card === hoverCard) return;
@@ -424,7 +410,7 @@
 
   function onPointerOver(e) {
     // The page scrolled under a pointer that has not moved: not a hover.
-    if (parkedAt && Math.hypot(e.clientX - parkedAt.x, e.clientY - parkedAt.y) < 2) return;
+    if (parkedAt && Math.hypot(e.x - parkedAt.x, e.y - parkedAt.y) < 2) return;
     parkedAt = null;
     const t = e.target;
     if (pop.contains(t)) return open && aim(open.card);
@@ -432,25 +418,22 @@
     // hovered thumbnail; being over it still counts as being over that card.
     if (t.closest("ytd-video-preview")) return;
     if (!isActivePage()) return resetAll();
-    aim(cardFrom(t), { x: e.clientX, y: e.clientY });
+    aim(cardFrom(t), e);
   }
 
   function resetAll() {
-    hoverCard = null;
-    cancelDwell();
     closeNow();
+    aim(null);
   }
 
   document.addEventListener("pointerover", onPointerOver, true);
   document.addEventListener("pointermove", (e) => {
-    const x = e.clientX;
-    const y = e.clientY;
-    lastPointer = { x, y };
+    lastPointer = e;
     // First real move after a scroll: whatever is under the pointer now
     // counts as hovered.
     if (parkedAt) return onPointerOver(e);
-    if (dwellAt && Math.hypot(x - dwellAt.x, y - dwellAt.y) > SETTLE_PX) startDwell(hoverCard, { x, y });
-  }, { capture: true, passive: true });
+    if (dwellAt && Math.hypot(e.x - dwellAt.x, e.y - dwellAt.y) > SETTLE_PX) startDwell(hoverCard, e);
+  }, true);
   document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) aim(null); }, true);
   document.addEventListener("pointerdown", (e) => { if (!pop.contains(e.target)) resetAll(); }, true);
   // Keyboard focus on a card (Tab, not a click) opens it like a hover does.
@@ -467,7 +450,8 @@
   // Shift+Tab past the first) goes back to that card and on through the page.
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && (open || dwellTimer)) return resetAll();
-    if (e.key !== "Tab" || !open || !opener || !opener.isConnected) return;
+    const opener = open?.opener;
+    if (e.key !== "Tab" || !opener?.isConnected) return;
     const controls = [...pop.querySelectorAll("a[href], button")];
     const a = document.activeElement;
     if (a === opener && !e.shiftKey && controls.length) { e.preventDefault(); return controls[0].focus(); }
@@ -482,10 +466,10 @@
   // (scroll anchoring while thumbnails load, programmatic jumps) only move the
   // card, so the popover follows it.
   window.addEventListener("wheel", (e) => {
-    parkedAt = { x: e.clientX, y: e.clientY };
+    parkedAt = e;
     if (open || dwellTimer) resetAll();
-  }, { capture: true, passive: true });
-  window.addEventListener("touchmove", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
+  }, true);
+  window.addEventListener("touchmove", () => { if (open || dwellTimer) resetAll(); }, true);
   let scrollRaf = 0;
   window.addEventListener("scroll", () => {
     if (lastPointer) parkedAt = lastPointer;
@@ -497,7 +481,7 @@
       if (r.bottom < topBound() || r.top > window.innerHeight) closeNow();
       else place(open.card);
     });
-  }, { capture: true, passive: true });
+  }, true);
   window.addEventListener("resize", resetAll);
   document.addEventListener("visibilitychange", () => { if (document.hidden) resetAll(); });
   document.addEventListener("yt-navigate-start", resetAll);

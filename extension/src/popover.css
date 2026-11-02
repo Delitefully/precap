@@ -29,6 +29,7 @@
   line-height: 20px;
   letter-spacing: normal;
   text-align: left;
+  text-wrap: pretty;
   /* Hidden state, and the exit: quick and accelerating. */
   opacity: 0;
   transform: scale(0.96);
@@ -102,9 +103,8 @@ html[dark] .tldw-pop {
   stroke-linejoin: round;
 }
 
-.tldw-mark > :first-child polygon {
-  fill: #ffc53d;
-  stroke: #ffc53d;
+.tldw-mark > :first-child {
+  color: #ffc53d;
 }
 
 /* Outlined wordmark (BRAND_WORDMARK in content.js), sized by its cap height:
@@ -127,7 +127,6 @@ html[dark] .tldw-pop {
   position: relative;
   margin: 0;
   padding: 0 0 0 14px; /* text lines up with the wordmark */
-  text-wrap: pretty;
 }
 
 .tldw-list li + li {
@@ -149,7 +148,6 @@ html[dark] .tldw-pop {
 .tldw-text,
 .tldw-msg {
   margin: 0;
-  text-wrap: pretty;
 }
 
 .tldw-msg {
@@ -162,7 +160,6 @@ html[dark] .tldw-pop {
   color: var(--tldw-muted);
   font-size: 12px;
   line-height: 16px;
-  text-wrap: pretty;
 }
 
 .tldw-link {

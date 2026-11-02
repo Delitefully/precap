@@ -48,10 +48,10 @@
   const cfg = (k) => window.ytcfg?.get?.(k);
   const log = (...a) => { if (DEBUG) console.debug("[tldw]", ...a); };
 
-  function asksLastMinute() {
+  function atCap() {
     const now = performance.now();
     while (askTimes.length && now - askTimes[0] > 60000) askTimes.shift();
-    return askTimes.length;
+    return askTimes.length >= MAX_ASKS_PER_MIN;
   }
 
   function getCookie(name) {
@@ -61,6 +61,7 @@
     }
     return null;
   }
+  const sapisid = () => getCookie("SAPISID") || getCookie("__Secure-3PAPISID");
 
   // Mirrors YouTube's own Authorization header:
   //   SAPISIDHASH <ts>_<sha1>[_u] SAPISID1PHASH ... SAPISID3PHASH ...
@@ -68,7 +69,7 @@
   async function authHeader() {
     const userSessionId = cfg("USER_SESSION_ID");
     const pairs = [
-      ["SAPISIDHASH", getCookie("SAPISID") || getCookie("__Secure-3PAPISID")],
+      ["SAPISIDHASH", sapisid()],
       ["SAPISID1PHASH", getCookie("__Secure-1PAPISID")],
       ["SAPISID3PHASH", getCookie("__Secure-3PAPISID")],
     ];
@@ -77,7 +78,7 @@
       if (!value) continue;
       const ts = Math.floor(Date.now() / 1000);
       const input = new TextEncoder().encode([userSessionId, ts, value, ORIGIN].filter(Boolean).join(" "));
-      const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-1", input)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", input)).toHex();
       parts.push(`${name} ${ts}_${hash}${userSessionId ? "_u" : ""}`);
     }
     return parts.join(" ");
@@ -160,27 +161,25 @@
         await new Promise((r) => setTimeout(r, 600));
         return { status: FORCE_STATUS };
       }
-      if (cfg("LOGGED_IN") !== true || !(getCookie("SAPISID") || getCookie("__Secure-3PAPISID"))) return { status: "logged_out" };
+      if (cfg("LOGGED_IN") !== true || !sapisid()) return { status: "logged_out" };
       if (session.unavailable) return { status: "unavailable" };
-      if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
+      if (atCap()) return { status: "error", detail: "local rate limit" };
 
       const next = await innertube("next", { videoId }, ctrl.signal);
       if (next?.responseContext?.mainAppWebResponseContext?.loggedOut === true) return { status: "logged_out" };
-      if (!next?.contents && !next?.playerOverlays) {
-        return { status: "error", detail: "unexpected next response" };
-      }
+      if (!next?.contents && !next?.playerOverlays) return { status: "error", detail: "unexpected next response" };
       const tokens = askTokens(next);
       if (!tokens) {
         if (!session.askSeen) {
           session.probe ??= innertube("next", { videoId: PROBE_VIDEO_ID }, ctrl.signal)
-            .then((j) => !!askTokens(j), () => { session.probe = null; return null; });
+            .then((j) => !!askTokens(j), () => { session.probe = null; });
           if ((await session.probe) === false) { session.unavailable = true; return { status: "unavailable" }; }
         }
         return { status: "no_ask" };
       }
       session.askSeen = true;
 
-      if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
+      if (atCap()) return { status: "error", detail: "local rate limit" };
       askTimes.push(performance.now());
       entry.answerAt = performance.now();
       const inputComposerFormData = { clientMessageId: "youchat-" + Date.now(), playerOffsetMs: "0" };
