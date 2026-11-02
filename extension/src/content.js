@@ -2,9 +2,9 @@
 //
 // Watches hovers on video cards with delegated listeners, shows a small
 // popover after a ~1 s dwell, and asks the page half (main-world.js) for a
-// summary over window.postMessage. Results are cached per videoId for the tab
-// session. Everything is rendered with textContent; nothing from the network
-// or from messages is ever parsed as HTML.
+// summary over window.postMessage. Results are cached per videoId in memory
+// only, for the life of the page. Everything is rendered with textContent;
+// nothing from the network or from messages is ever parsed as HTML.
 (() => {
   "use strict";
   if (window.__tldwUi) return;
@@ -17,7 +17,6 @@
   const ACTIVE_PATHS = new Set(["/", "/feed/subscriptions"]);
   const CARD_OUTER = "ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer";
   const CARD_INNER = "yt-lockup-view-model, ytd-rich-grid-media";
-  const STORE_PREFIX = "tldw:v:";
 
   const MESSAGES = {
     logged_out: "Sign in to YouTube to see summaries",
@@ -39,21 +38,8 @@
 
   // ---------- helpers ----------
 
-  const store = {
-    get(id) {
-      try { const s = sessionStorage.getItem(STORE_PREFIX + id); return s ? JSON.parse(s) : null; } catch { return null; }
-    },
-    set(id, v) {
-      try { sessionStorage.setItem(STORE_PREFIX + id, JSON.stringify(v)); } catch { /* quota or blocked */ }
-    },
-  };
-
-  function flag(name) {
-    try { return sessionStorage.getItem("tldw:" + name) || ""; } catch { return ""; }
-  }
-
   function isActivePage() {
-    return ACTIVE_PATHS.has(location.pathname) || flag("pages") === "all";
+    return ACTIVE_PATHS.has(location.pathname);
   }
 
   function cardFrom(el) {
@@ -255,9 +241,8 @@
     pop.hidden = false;
     pop.classList.remove("tldw-in");
 
-    const cached = cache.get(videoId) || store.get(videoId);
+    const cached = cache.get(videoId);
     if (cached) {
-      cache.set(videoId, cached);
       render(cached);
     } else if (sessionStatus) {
       render({ status: sessionStatus });
@@ -329,7 +314,6 @@
     }
     if (result.status === "ok" || result.status === "no_ask") {
       cache.set(videoId, result);
-      store.set(videoId, result);
     } else if (result.status === "logged_out" || result.status === "unavailable") {
       sessionStatus = result.status;
     }

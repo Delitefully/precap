@@ -34,7 +34,7 @@ Behaviour details:
 - Only active on `/` and `/feed/subscriptions` (change `ACTIVE_PATHS` in `content.js` to add pages).
 - The popover appears after a ~1 s dwell, beside the card (right, else left; above or below in one-column layouts) so the thumbnail and its preview stay visible. Moving into it keeps it open; leaving closes it after a short grace; scrolling with the wheel or pressing Esc closes it.
 - Shorts, ads, playlists/mixes, live and upcoming streams are skipped silently.
-- Results are cached per video for the tab session, at most 2 requests run at once, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
+- Results are cached per video in memory until the page reloads, at most 2 requests run at once, at most 10 Ask questions are sent per minute, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
 
 ## What you'll see when it can't summarize
 
@@ -43,7 +43,7 @@ Behaviour details:
 | Signed out | Sign in to YouTube to see summaries (no request is sent) |
 | Ask not offered to this account, country or language | YouTube's Ask isn't available on this account or in your region (remembered for the session) |
 | Ask not offered for this video (kids content, live streams, ...) | No summary for this video |
-| Network/HTTP error, timeout, rate limit, odd response | Couldn't load a summary, with one **Retry** |
+| Network/HTTP error, timeout, rate limit (YouTube's or the extension's 10 per minute), odd response | Couldn't load a summary, with one **Retry** |
 
 "Not available for the account" is told apart from "not available for this video" by checking one known Ask-enabled video once per session.
 
@@ -60,22 +60,21 @@ Behaviour details:
 <img src="docs/screenshots/guard-error.jpg" width="400" alt="Error with retry">
 </p>
 
-## Limits and caveats
+## Privacy and limits
 
+- **It asks as you.** Each summary is a real Ask question sent with your signed-in YouTube session. YouTube may keep these in your YouTube/Google activity like any Ask conversation, and Ask has its own usage limits. The extension caps itself at 10 questions a minute.
+- **No other servers.** Requests go only to `www.youtube.com`. There is no analytics, no third-party server, no remote code, and no extension permissions beyond running on `www.youtube.com`. Auth headers are computed per request and never logged or stored.
+- **Nothing persisted.** Summaries are cached in memory for the open page only; nothing is written to storage.
 - **Private API.** `next`/`get_panel` and the Ask panel's shape are undocumented and can change any day; when they do, you'll see "Couldn't load a summary" until the parsing is updated.
-- **Your account, your activity.** Each summary is a real Ask question asked as you. YouTube may keep these in your YouTube/Google activity like any Ask conversation, and Ask has its own usage limits.
 - **Availability.** Ask is only offered to some signed-in accounts (age, country and language restrictions apply) and not for every video.
 - **Speed.** Expect roughly 3 seconds per new video (one `next` call plus the Gemini answer). Cached videos show instantly.
 - The prompt is in English, so answers are in English.
 
 ## Debugging
 
-Set these in the YouTube tab's DevTools console (`sessionStorage`, so they last until the tab closes):
+There are no page-settable switches. For local testing, edit the constants at the top of `src/main-world.js` and reload the extension:
 
-```js
-sessionStorage.setItem("tldw:debug", "1");   // log requests/results to the console
-sessionStorage.setItem("tldw:pages", "all"); // run on every YouTube page, e.g. channel Videos tabs
-sessionStorage.setItem("tldw:force", "error"); // or logged_out | unavailable | no_ask, to preview a state
-```
+- `DEBUG = true` logs each request's video id and result status to the console.
+- `FORCE_STATUS = "error"` (or `logged_out`, `unavailable`, `no_ask`) previews a guard state without sending any request.
 
-Cached summaries live under `tldw:v:<videoId>` in the tab's `sessionStorage`.
+To try other pages, edit `isActivePage()` in `src/content.js`.

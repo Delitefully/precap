@@ -10,6 +10,10 @@
 //               { tldw: 1, dir: "req", type: "cancel", id }
 //   page -> UI: { tldw: 1, dir: "res", id, status, text?, detail? }
 //   status: "ok" | "logged_out" | "unavailable" | "no_ask" | "error" | "aborted"
+// Only same-window, same-origin messages are accepted, so iframes (ads,
+// embeds) cannot use the bridge. Other scripts in this page's own JS world can,
+// but they already have the page's full session; the bridge only lets them ask
+// the fixed prompt about a valid videoId, never pick a URL, endpoint or body.
 (() => {
   "use strict";
   if (window.__tldwMain) return;
@@ -30,15 +34,27 @@
   // A request that has been waiting this long for the answer is "almost back":
   // a cancel lets it finish so the result lands in the cache.
   const KEEP_AFTER_MS = 1500;
+  // Hard cap on Ask questions sent as the user, whatever the UI does.
+  const MAX_ASKS_PER_MIN = 10;
+  // Dev only, edit here (never read from the page): log to the console, or
+  // force a guard state ("logged_out" | "unavailable" | "no_ask" | "error").
+  const DEBUG = false;
+  const FORCE_STATUS = "";
   const REGION_RE =
     /(not|isn't|is not) (yet )?available (in your (country|region|language)|for your account)/i;
 
   const session = { unavailable: false, askSeen: false, probe: null };
   const inflight = new Map(); // id -> { ctrl, phase, since, keep }
+  const askTimes = []; // performance.now() of each Ask question in the last minute
 
   const cfg = (k) => (window.ytcfg && typeof window.ytcfg.get === "function" ? window.ytcfg.get(k) : undefined);
-  const debug = () => { try { return sessionStorage.getItem("tldw:debug") === "1"; } catch { return false; } };
-  const log = (...a) => { if (debug()) console.debug("[tldw]", ...a); };
+  const log = (...a) => { if (DEBUG) console.debug("[tldw]", ...a); };
+
+  function asksLastMinute() {
+    const now = performance.now();
+    while (askTimes.length && now - askTimes[0] > 60000) askTimes.shift();
+    return askTimes.length;
+  }
 
   function getCookie(name) {
     for (const part of document.cookie.split(";")) {
@@ -103,7 +119,8 @@
     const pageId = cfg("DELEGATED_SESSION_ID");
     if (pageId) headers["X-Goog-PageId"] = String(pageId);
 
-    const res = await nativeFetch(`/youtubei/v1/${endpoint}?prettyPrint=false`, {
+    // Absolute URL: a relative one would follow a <base href> on the page.
+    const res = await nativeFetch(`${ORIGIN}/youtubei/v1/${endpoint}?prettyPrint=false`, {
       method: "POST",
       credentials: "same-origin",
       headers,
@@ -165,24 +182,19 @@
     return session.probe;
   }
 
-  function forced() {
-    try { return sessionStorage.getItem("tldw:force") || ""; } catch { return ""; }
-  }
-
   async function summarize(id, videoId) {
     const ctrl = new AbortController();
     const entry = { ctrl, phase: "next", since: performance.now(), keep: false, timedOut: false };
     inflight.set(id, entry);
     const timer = setTimeout(() => { entry.timedOut = true; ctrl.abort(); }, TIMEOUT_MS);
     try {
-      // Test hook: sessionStorage "tldw:force" = logged_out | unavailable | no_ask | error
-      const f = forced();
-      if (f) {
+      if (FORCE_STATUS) {
         await new Promise((r) => setTimeout(r, 600));
-        return { status: f };
+        return { status: FORCE_STATUS };
       }
       if (!isLoggedIn()) return { status: "logged_out" };
       if (session.unavailable) return { status: "unavailable" };
+      if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
 
       const next = await innertube("next", { videoId }, ctrl.signal);
       if (next?.responseContext?.mainAppWebResponseContext?.loggedOut === true) return { status: "logged_out" };
@@ -199,6 +211,8 @@
       }
       session.askSeen = true;
 
+      if (asksLastMinute() >= MAX_ASKS_PER_MIN) return { status: "error", detail: "local rate limit" };
+      askTimes.push(performance.now());
       entry.phase = "answer";
       entry.since = performance.now();
       const inputComposerFormData = { clientMessageId: "youchat-" + Date.now(), playerOffsetMs: "0" };
