@@ -22,7 +22,7 @@ YouTube's watch page has an **Ask** button that opens a Gemini chat about the vi
 1. `POST /youtubei/v1/next` with the `videoId`. The response carries the Ask panel (`PAyouchat`), including the continuation token for its free-text question box.
 2. `POST /youtubei/v1/get_panel` with that continuation and a short custom prompt (2 or 3 bullets, at most 10 words each, main takeaway first). The answer comes back as one JSON response; the markdown text is trimmed into bullets.
 
-The request carries the same headers YouTube's own code sends (`Authorization: SAPISIDHASH ...` computed from your cookies at request time, `X-Goog-AuthUser`, `X-Youtube-Client-Name/Version`, `X-Goog-Visitor-Id`). Nothing is sent anywhere except `www.youtube.com`, and the extension asks for no permissions beyond running on that site.
+The request carries the same headers YouTube's own code sends (`Authorization: SAPISIDHASH ...` computed from your cookies at request time, `X-Goog-AuthUser`, `X-Youtube-Client-Name/Version`, `X-Goog-Visitor-Id`).
 
 Two scripts make this work:
 
@@ -36,7 +36,7 @@ Behaviour details:
 - A small Precap badge (the mark and the name) sits in the popover's top-left corner, so it's clear the summary comes from the extension.
 - Tabbing to a card with the keyboard opens it the same way; Tab again steps into the popover's link or button, and Esc closes it. Results are also announced to screen readers. Motion is a short fade and scale, reduced to a plain fade with `prefers-reduced-motion`.
 - Shorts, ads, playlists/mixes, live and upcoming streams are skipped silently.
-- Results are cached per video in memory until the page reloads, at most 2 requests run at once, at most 10 Ask questions are sent per minute, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
+- At most 2 requests run at once, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
 
 ## What you'll see when it can't summarize
 
@@ -78,5 +78,3 @@ There are no page-settable switches. For local testing, edit the constants at th
 
 - `DEBUG = true` logs each request's video id and result status to the console.
 - `FORCE_STATUS = "error"` (or `logged_out`, `unavailable`, `no_ask`) previews a guard state without sending any request.
-
-To try other pages, edit `isActivePage()` in `src/content.js`.
