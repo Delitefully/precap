@@ -4,14 +4,15 @@
 
 .tldw-pop {
   position: fixed;
-  z-index: 2100;
+  z-index: 2100; /* above the masthead (2020) and miniplayer (2030), below YouTube's menus */
   top: 0;
   left: 0;
   box-sizing: border-box;
   width: 320px;
   max-width: calc(100vw - 16px);
   margin: 0;
-  padding: 12px 16px 12px;
+  padding: 12px 16px;
+  overflow: hidden;
   background: #fff;
   color: #0f0f0f;
   border-radius: 12px;
@@ -22,20 +23,38 @@
   line-height: 20px;
   letter-spacing: normal;
   text-align: left;
+  /* Hidden state, and the exit: quick and accelerating. */
   opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease;
-  pointer-events: auto;
-  -webkit-font-smoothing: antialiased;
+  transform: scale(0.96);
+  transform-origin: left top;
+  transition: opacity 100ms cubic-bezier(0.4, 0, 1, 1), transform 100ms cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
 }
 
 .tldw-pop[hidden] {
   display: none;
 }
 
+/* Grow out of the side that faces the card. */
+.tldw-pop[data-side="left"] {
+  transform-origin: right top;
+}
+
+.tldw-pop[data-side="below"] {
+  transform-origin: center top;
+}
+
+.tldw-pop[data-side="above"] {
+  transform-origin: center bottom;
+}
+
+/* The entrance: a little slower, decelerating. */
 .tldw-pop.tldw-in {
   opacity: 1;
   transform: none;
+  pointer-events: auto;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 html[dark] .tldw-pop {
@@ -75,7 +94,8 @@ html[dark] .tldw-head {
 .tldw-list li {
   position: relative;
   margin: 0;
-  padding: 0 0 0 14px;
+  padding: 0 0 0 19px; /* text lines up with the "Summary" label */
+  text-wrap: pretty;
 }
 
 .tldw-list li + li {
@@ -85,7 +105,7 @@ html[dark] .tldw-head {
 .tldw-list li::before {
   content: "";
   position: absolute;
-  left: 2px;
+  left: 5px; /* centred under the sparkle */
   top: 8px;
   width: 4px;
   height: 4px;
@@ -97,6 +117,7 @@ html[dark] .tldw-head {
 .tldw-text,
 .tldw-msg {
   margin: 0;
+  text-wrap: pretty;
 }
 
 .tldw-msg {
@@ -107,54 +128,114 @@ html[dark] .tldw-msg {
   color: #aaa;
 }
 
+/* Message with an optional action on the right. */
+.tldw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* YouTube's small tonal button. */
 .tldw-retry {
-  margin: 0 0 0 2px;
-  padding: 0;
+  flex: none;
+  height: 32px;
+  margin: 0;
+  padding: 0 14px;
   border: 0;
-  background: none;
-  color: #065fd4;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.05);
+  color: #0f0f0f;
   font: inherit;
   font-weight: 500;
+  line-height: 32px;
   cursor: pointer;
 }
 
 .tldw-retry:hover {
-  text-decoration: underline;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.tldw-retry:active {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .tldw-retry:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 html[dark] .tldw-retry {
-  color: #3ea6ff;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f1f1;
+}
+
+html[dark] .tldw-retry:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+html[dark] .tldw-retry:active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Loading: the outline of a typical answer, three bullets of two lines,
+   pulsing together. Each bar sits in a 20px line box like the text. */
+.tldw-skel-list {
+  animation: tldw-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.tldw-skel-list li {
+  display: flex;
+  flex-direction: column;
+}
+
+.tldw-skel-list li::before {
+  background: rgba(0, 0, 0, 0.12);
+  opacity: 1;
 }
 
 .tldw-skel {
+  display: block;
   height: 10px;
-  margin: 5px 0 11px;
+  margin: 5px 0;
   border-radius: 5px;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.12) 50%, rgba(0, 0, 0, 0.06) 100%);
-  background-size: 200% 100%;
-  animation: tldw-shimmer 1.3s linear infinite;
+  background: rgba(0, 0, 0, 0.08);
 }
 
-.tldw-skel:last-child {
-  margin-bottom: 5px;
+html[dark] .tldw-skel-list li::before {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 html[dark] .tldw-skel {
-  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.07) 100%);
+  background: rgba(255, 255, 255, 0.1);
 }
 
-@keyframes tldw-shimmer {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
+@keyframes tldw-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
+/* Announcer for screen readers; see content.js. */
+.tldw-sr {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tldw-pop { transition: none; transform: none; }
-  .tldw-skel { animation: none; }
+  .tldw-pop,
+  .tldw-pop.tldw-in {
+    transform: none;
+    transition-property: opacity;
+  }
+
+  .tldw-skel-list {
+    animation: none;
+  }
 }

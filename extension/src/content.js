@@ -12,18 +12,25 @@
 
   const ORIGIN = location.origin;
   const DWELL_MS = 1000;
+  // The dwell only counts while the pointer rests: moving further than this
+  // restarts it, so sweeping across the grid never opens anything.
+  const SETTLE_PX = 32;
   const CLOSE_GRACE_MS = 300;
+  const FADE_OUT_MS = 100; // keep in step with the .tldw-pop transition
   const MAX_INFLIGHT = 2;
   const ACTIVE_PATHS = new Set(["/", "/feed/subscriptions"]);
   const CARD_OUTER = "ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer";
   const CARD_INNER = "yt-lockup-view-model, ytd-rich-grid-media";
 
   const MESSAGES = {
-    logged_out: "Sign in to YouTube to see summaries",
-    unavailable: "YouTube’s Ask isn’t available on this account or in your region",
+    logged_out: "Sign in to see summaries",
+    unavailable: "Ask isn’t available for your account or region",
     no_ask: "No summary for this video",
-    error: "Couldn’t load a summary",
+    error: "Couldn’t load summary",
+    error_final: "Couldn’t load summary. Try again later.",
   };
+
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
   const cache = new Map(); // videoId -> { status: "ok", bullets | text } | { status: "no_ask" }
   const pending = new Map(); // request id -> videoId
@@ -31,9 +38,15 @@
   let queued = null; // videoId waiting for a free request slot
   let seq = 0;
 
-  let hoverCard = null;
+  let hoverCard = null; // card under the pointer or holding keyboard focus
   let dwellTimer = 0;
+  let dwellAt = null; // pointer position the dwell is measured from
+  let lastPointer = null; // last pointermove position
+  // Set when the page scrolls: a card that slides under a still pointer is
+  // not a hover, so no dwell starts until the pointer really moves.
+  let parkedAt = null;
   let closeTimer = 0;
+  let hideTimer = 0;
   let open = null; // { card, videoId, reqId, retried }
 
   // ---------- helpers ----------
@@ -121,8 +134,13 @@
   const pop = document.createElement("div");
   pop.className = "tldw-pop";
   pop.setAttribute("role", "tooltip");
-  pop.setAttribute("aria-live", "polite");
   pop.hidden = true;
+  // Screen readers hear results through a separate, always-present status
+  // region: the popover itself is display:none until shown, and a live region
+  // that appears together with its text is often not announced.
+  const live = document.createElement("div");
+  live.className = "tldw-sr";
+  live.setAttribute("role", "status");
 
   const head = document.createElement("div");
   head.className = "tldw-head";
@@ -156,32 +174,67 @@
     return n;
   }
 
+  // The skeleton has the shape of a typical answer (three bullets of two
+  // lines each), so the popover keeps its size when the text arrives.
+  const SKELETON = [[100, 72], [100, 48], [100, 64]];
+
   function render(r) {
+    const shown = !pop.hidden && pop.classList.contains("tldw-in");
+    const fromHeight = shown ? pop.offsetHeight : 0;
+    const swap = shown && pop.dataset.state === "loading" && r.status !== "loading";
     body.replaceChildren();
     pop.dataset.state = r.status;
     pop.setAttribute("aria-busy", r.status === "loading" ? "true" : "false");
+    let said = "";
     if (r.status === "loading") {
-      for (const w of [92, 80, 62]) {
-        const s = el("div", "tldw-skel");
-        s.style.width = w + "%";
-        body.appendChild(s);
+      const ul = el("ul", "tldw-list tldw-skel-list");
+      ul.setAttribute("aria-hidden", "true");
+      for (const lines of SKELETON) {
+        const li = el("li");
+        for (const w of lines) {
+          const s = el("span", "tldw-skel");
+          s.style.width = w + "%";
+          li.appendChild(s);
+        }
+        ul.appendChild(li);
       }
+      body.appendChild(ul);
     } else if (r.status === "ok" && r.bullets) {
       const ul = el("ul", "tldw-list");
       for (const b of r.bullets) ul.appendChild(el("li", null, b));
       body.appendChild(ul);
+      said = "Summary: " + r.bullets.join(". ");
     } else if (r.status === "ok") {
       body.appendChild(el("p", "tldw-text", r.text || ""));
+      said = "Summary: " + (r.text || "");
     } else {
-      const p = el("p", "tldw-msg", MESSAGES[r.status] || MESSAGES.error);
-      if (r.status === "error" && open && !open.retried) {
+      const canRetry = r.status === "error" && open && !open.retried;
+      const key = r.status === "error" && !canRetry ? "error_final" : r.status;
+      const row = el("div", "tldw-row");
+      row.appendChild(el("p", "tldw-msg", MESSAGES[key] || MESSAGES.error));
+      if (canRetry) {
         const b = el("button", "tldw-retry", "Retry");
         b.type = "button";
-        p.append(" ", b);
+        row.appendChild(b);
       }
-      body.appendChild(p);
+      body.appendChild(row);
+      said = MESSAGES[key] || MESSAGES.error;
     }
+    live.textContent = said;
     if (open) place(open.card);
+    if (!shown) return;
+    // Settle into the new size and fade the answer in over the skeleton,
+    // instead of snapping.
+    if (swap && body.firstElementChild) {
+      body.firstElementChild.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
+    }
+    const toHeight = pop.offsetHeight;
+    if (!reducedMotion.matches && Math.abs(toHeight - fromHeight) > 1) {
+      pop.animate([{ height: fromHeight + "px" }, { height: toHeight + "px" }], {
+        duration: 200,
+        easing: "cubic-bezier(0.2, 0, 0, 1)",
+      });
+    }
   }
 
   function topBound() {
@@ -237,9 +290,14 @@
     if (!videoId) return;
     closeNow();
     open = { card, videoId, reqId: null, retried: false };
-    if (!pop.isConnected) document.body.appendChild(pop);
+    if (!pop.isConnected) document.body.append(pop, live);
+    // Start from the hidden state even if the last popover is still fading
+    // out, so it never slides over from the previous card.
+    clearTimeout(hideTimer);
+    hideTimer = 0;
+    pop.hidden = true;
+    void pop.offsetWidth;
     pop.hidden = false;
-    pop.classList.remove("tldw-in");
 
     const cached = cache.get(videoId);
     if (cached) {
@@ -262,8 +320,10 @@
     if (open.reqId && pending.has(open.reqId)) post({ type: "cancel", id: open.reqId });
     if (queued === open.videoId) queued = null;
     open = null;
-    pop.hidden = true;
+    live.textContent = "";
     pop.classList.remove("tldw-in");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { hideTimer = 0; if (!open) pop.hidden = true; }, FADE_OUT_MS + 20);
   }
 
   function scheduleClose() {
@@ -279,6 +339,17 @@
   function cancelDwell() {
     clearTimeout(dwellTimer);
     dwellTimer = 0;
+    dwellAt = null;
+  }
+
+  function startDwell(card, at) {
+    clearTimeout(dwellTimer);
+    dwellAt = at;
+    dwellTimer = setTimeout(() => {
+      dwellTimer = 0;
+      dwellAt = null;
+      if (hoverCard === card && card.isConnected && isActivePage()) show(card);
+    }, DWELL_MS);
   }
 
   // ---------- messaging ----------
@@ -334,14 +405,31 @@
 
   // ---------- hover tracking (delegated) ----------
 
-  function onPointerOver(e) {
-    const t = e.target;
-    if (t instanceof Node && pop.contains(t)) {
-      hoverCard = pop; // sentinel: leaving the popover for empty space must still close it
-      cancelDwell();
-      cancelClose();
-      return;
+  // Pointer and keyboard focus both land here: `card` is what the user is now
+  // on (null for anything else), `at` the pointer position or null for focus.
+  function aim(card, at) {
+    if (card === hoverCard) return;
+    hoverCard = card;
+    cancelDwell();
+    if (open) {
+      if (open.card === card) { cancelClose(); return; }
+      scheduleClose();
     }
+    if (card) startDwell(card, at);
+  }
+
+  function enterPopover() {
+    hoverCard = pop; // sentinel: leaving the popover for empty space must still close it
+    cancelDwell();
+    cancelClose();
+  }
+
+  function onPointerOver(e) {
+    // The page scrolled under a pointer that has not moved: not a hover.
+    if (parkedAt && Math.hypot(e.clientX - parkedAt.x, e.clientY - parkedAt.y) < 2) return;
+    parkedAt = null;
+    const t = e.target;
+    if (t instanceof Node && pop.contains(t)) return enterPopover();
     // YouTube's inline-preview player is a separate element laid over the
     // hovered thumbnail; being over it still counts as being over that card.
     if (t instanceof Element && t.closest("ytd-video-preview")) return;
@@ -351,20 +439,7 @@
       if (open) closeNow();
       return;
     }
-    const card = cardFrom(t);
-    if (card === hoverCard) return;
-    hoverCard = card;
-    cancelDwell();
-    if (open) {
-      if (open.card === card) { cancelClose(); return; }
-      scheduleClose();
-    }
-    if (card) {
-      dwellTimer = setTimeout(() => {
-        dwellTimer = 0;
-        if (hoverCard === card && card.isConnected && isActivePage()) show(card);
-      }, DWELL_MS);
-    }
+    aim(cardFrom(t), { x: e.clientX, y: e.clientY });
   }
 
   function resetAll() {
@@ -374,19 +449,44 @@
   }
 
   document.addEventListener("pointerover", onPointerOver, true);
+  document.addEventListener("pointermove", (e) => {
+    const x = e.clientX;
+    const y = e.clientY;
+    lastPointer = { x, y };
+    if (parkedAt) {
+      // First real move after a scroll: whatever is under the pointer now
+      // counts as hovered.
+      if (Math.hypot(x - parkedAt.x, y - parkedAt.y) >= 2) onPointerOver(e);
+      return;
+    }
+    if (!dwellTimer || !dwellAt || !(hoverCard instanceof Element)) return;
+    if (Math.hypot(x - dwellAt.x, y - dwellAt.y) > SETTLE_PX) startDwell(hoverCard, { x, y });
+  }, { capture: true, passive: true });
   document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) { hoverCard = null; cancelDwell(); scheduleClose(); } }, true);
   document.addEventListener("pointerdown", (e) => {
     if (e.target instanceof Node && pop.contains(e.target)) return;
     resetAll();
   }, true);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") resetAll(); }, true);
+  // Keyboard focus on a card (Tab, not a click) opens it like a hover does.
+  document.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (pop.contains(t)) return enterPopover();
+    if (!t.matches(":focus-visible")) return;
+    aim(isActivePage() ? cardFrom(t) : null, null);
+  }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (open || dwellTimer)) resetAll(); }, true);
   // A wheel/touch scroll means the user is moving on: close. Other scrolls
   // (scroll anchoring while thumbnails load, programmatic jumps) only move the
   // card, so the popover follows it.
-  window.addEventListener("wheel", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
+  window.addEventListener("wheel", (e) => {
+    parkedAt = { x: e.clientX, y: e.clientY };
+    if (open || dwellTimer) resetAll();
+  }, { capture: true, passive: true });
   window.addEventListener("touchmove", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
   let scrollRaf = 0;
   window.addEventListener("scroll", () => {
+    if (lastPointer) parkedAt = lastPointer;
     if (!open || scrollRaf) return;
     scrollRaf = requestAnimationFrame(() => {
       scrollRaf = 0;

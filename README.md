@@ -32,7 +32,8 @@ Two scripts make this work:
 Behaviour details:
 
 - Only active on `/` and `/feed/subscriptions` (change `ACTIVE_PATHS` in `content.js` to add pages).
-- The popover appears after a ~1 s dwell, beside the card (right, else left; above or below in one-column layouts) so the thumbnail and its preview stay visible. Moving into it keeps it open; leaving closes it after a short grace; scrolling with the wheel or pressing Esc closes it.
+- The popover appears once the pointer has rested on a card for ~1 s (sweeping across the grid, or the page scrolling under a still pointer, doesn't count), beside the card (right, else left; above or below in one-column layouts) so the thumbnail and its preview stay visible. Its loading placeholder has the shape of a typical answer, so it doesn't jump when the text arrives. Moving into it keeps it open; leaving closes it after a short grace; scrolling with the wheel or pressing Esc closes it.
+- Tabbing to a card with the keyboard opens it the same way, and Esc closes it. Results are also announced to screen readers. Motion is a short fade and scale, reduced to a plain fade with `prefers-reduced-motion`.
 - Shorts, ads, playlists/mixes, live and upcoming streams are skipped silently.
 - Results are cached per video in memory until the page reloads, at most 2 requests run at once, at most 10 Ask questions are sent per minute, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
 
@@ -40,10 +41,10 @@ Behaviour details:
 
 | Situation | Message |
 | --- | --- |
-| Signed out | Sign in to YouTube to see summaries (no request is sent) |
-| Ask not offered to this account, country or language | YouTube's Ask isn't available on this account or in your region (remembered for the session) |
+| Signed out | Sign in to see summaries (no request is sent) |
+| Ask not offered to this account, country or language | Ask isn't available for your account or region (remembered for the session) |
 | Ask not offered for this video (kids content, live streams, ...) | No summary for this video |
-| Network/HTTP error, timeout, rate limit (YouTube's or the extension's 10 per minute), odd response | Couldn't load a summary, with one **Retry** |
+| Network/HTTP error, timeout, rate limit (YouTube's or the extension's 10 per minute), odd response | Couldn't load summary, with one **Retry** (then: Try again later) |
 
 "Not available for the account" is told apart from "not available for this video" by checking one known Ask-enabled video once per session.
 
@@ -65,7 +66,7 @@ Behaviour details:
 - **It asks as you.** Each summary is a real Ask question sent with your signed-in YouTube session. YouTube may keep these in your YouTube/Google activity like any Ask conversation, and Ask has its own usage limits. The extension caps itself at 10 questions a minute.
 - **No other servers.** Requests go only to `www.youtube.com`. There is no analytics, no third-party server, no remote code, and no extension permissions beyond running on `www.youtube.com`. Auth headers are computed per request and never logged or stored.
 - **Nothing persisted.** Summaries are cached in memory for the open page only; nothing is written to storage.
-- **Private API.** `next`/`get_panel` and the Ask panel's shape are undocumented and can change any day; when they do, you'll see "Couldn't load a summary" until the parsing is updated.
+- **Private API.** `next`/`get_panel` and the Ask panel's shape are undocumented and can change any day; when they do, you'll see "Couldn't load summary" until the parsing is updated.
 - **Availability.** Ask is only offered to some signed-in accounts (age, country and language restrictions apply) and not for every video.
 - **Speed.** Expect roughly 3 seconds per new video (one `next` call plus the Gemini answer). Cached videos show instantly.
 - The prompt is in English, so answers are in English.
