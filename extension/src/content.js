@@ -214,7 +214,7 @@
     const cr = card.getBoundingClientRect();
     const vw = document.documentElement.clientWidth;
     const vh = window.innerHeight;
-    const gap = 12;
+    const gap = 18; // clears YouTube's own hover highlight around the card
     const margin = 8;
     const w = pop.offsetWidth;
     const h = pop.offsetHeight;
@@ -344,11 +344,14 @@
   function onPointerOver(e) {
     const t = e.target;
     if (t instanceof Node && pop.contains(t)) {
-      hoverCard = null;
+      hoverCard = pop; // sentinel: leaving the popover for empty space must still close it
       cancelDwell();
       cancelClose();
       return;
     }
+    // YouTube's inline-preview player is a separate element laid over the
+    // hovered thumbnail; being over it still counts as being over that card.
+    if (t instanceof Element && t.closest("ytd-video-preview")) return;
     if (!isActivePage()) {
       hoverCard = null;
       cancelDwell();
@@ -384,9 +387,23 @@
     resetAll();
   }, true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") resetAll(); }, true);
-  window.addEventListener("scroll", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
+  // A wheel/touch scroll means the user is moving on: close. Other scrolls
+  // (scroll anchoring while thumbnails load, programmatic jumps) only move the
+  // card, so the popover follows it.
+  window.addEventListener("wheel", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
+  window.addEventListener("touchmove", () => { if (open || dwellTimer) resetAll(); }, { capture: true, passive: true });
+  let scrollRaf = 0;
+  window.addEventListener("scroll", () => {
+    if (!open || scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0;
+      if (!open) return;
+      const r = open.card.getBoundingClientRect();
+      if (r.bottom < topBound() || r.top > window.innerHeight) closeNow();
+      else place(open.card);
+    });
+  }, { capture: true, passive: true });
   window.addEventListener("resize", resetAll);
-  window.addEventListener("blur", resetAll);
   document.addEventListener("visibilitychange", () => { if (document.hidden) resetAll(); });
   document.addEventListener("yt-navigate-start", resetAll);
   document.addEventListener("yt-navigate-finish", resetAll);

@@ -19,9 +19,9 @@
   const nativeFetch = window.fetch.bind(window);
 
   const PROMPT =
-    "In 2 to 4 short bullet points, what is the point of this video? " +
-    "Each bullet under 12 words, starting with a capital letter. " +
-    "No intro, no timestamps, no bold.";
+    "TL;DW: give the point of this video as 2 or 3 bullet points, " +
+    "each a short statement of at most 10 words. Lead with the main takeaway. " +
+    "No intro, no timestamps, no bold, no ending periods.";
 
   // A long-lived video that has always had Ask. Used once per session to tell
   // "this video has no Ask" apart from "Ask is off for this account/region".
