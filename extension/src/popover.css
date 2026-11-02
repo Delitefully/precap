@@ -1,7 +1,5 @@
-/* Precap popover. Matches YouTube's menus: Roboto, 12px radius, soft
-   shadow, #fff / #282828 surfaces, YouTube's text greys. Dark follows
-   html[dark], which YouTube sets for its dark theme, by redefining the
-   colour properties below. */
+/* Precap popover, styled like YouTube's own menus. Dark mode follows
+   html[dark], which YouTube sets for its dark theme. */
 
 .tldw-pop {
   --tldw-muted: #606060;
@@ -77,9 +75,8 @@ html[dark] .tldw-pop {
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-/* Brand badge, top left: the Precap mark and wordmark, small and muted.
-   The mark's top band stays marker yellow; its lower bands and the wordmark
-   share the head's muted text colour, as the lockup's do in slate. */
+/* Brand badge: the mark's top band stays marker yellow; the rest of the mark
+   and the wordmark take the muted text colour, as the lockup does in slate. */
 .tldw-head {
   display: flex;
   align-items: center;
@@ -107,9 +104,8 @@ html[dark] .tldw-pop {
   color: #ffc53d;
 }
 
-/* Outlined wordmark (BRAND_WORDMARK in content.js), sized by its cap height:
-   9px keeps the heavy outlines' counters open (8.5px matches the Roboto
-   stand-in's caps but fills in). */
+/* BRAND_WORDMARK (config.js), sized by its cap height: 9px keeps the heavy
+   outlines' counters open (8.5px matches Roboto's caps but fills in). */
 .tldw-wordmark {
   width: auto;
   height: 9px;
@@ -154,7 +150,6 @@ html[dark] .tldw-pop {
   color: var(--tldw-muted);
 }
 
-/* Second, smaller line under a message, with an optional link. */
 .tldw-note {
   margin: 4px 0 0;
   color: var(--tldw-muted);
@@ -179,7 +174,6 @@ html[dark] .tldw-pop {
   border-radius: 2px;
 }
 
-/* Message with an optional action on the right. */
 .tldw-row {
   display: flex;
   align-items: center;
@@ -215,8 +209,7 @@ html[dark] .tldw-pop {
   outline-offset: 2px;
 }
 
-/* Loading: the outline of a typical answer, three bullets of two lines,
-   pulsing together. Each bar sits in a 20px line box like the text. */
+/* Loading skeleton: each bar sits in a 20px line box like the text. */
 .tldw-skel-list {
   animation: tldw-pulse 1.2s ease-in-out infinite alternate;
 }
@@ -243,7 +236,7 @@ html[dark] .tldw-pop {
   to { opacity: 0.45; }
 }
 
-/* Announcer for screen readers; see content.js. */
+/* Visually hidden status region for screen readers (popover.js). */
 .tldw-sr {
   position: fixed;
   width: 1px;
