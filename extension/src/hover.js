@@ -1,13 +1,13 @@
 // Precap - works out which card the user is on: the pointer resting on it
 // (the dwell) or keyboard focus, and the moves that mean they have moved on.
-// It drives the popover through the controls content.js passes to start().
+// It drives the popover through the API content.js passes to start().
 Precap.hover = (() => {
   "use strict";
 
   const { DWELL_MS, SETTLE_PX } = Precap.config;
   const youtube = Precap.youtube;
 
-  let popover = null; // the controls from start()
+  let popover = null; // set by start()
   let hoverCard = null; // card under the pointer or holding keyboard focus
   let dwellTimer = 0;
   let dwellAt = null; // pointer event (x, y) the dwell is measured from
@@ -126,10 +126,11 @@ Precap.hover = (() => {
     if (lastPointer) parkedAt = lastPointer;
   }
 
-  // `controls`: { card(), opener(), isRefocus(el), show(card), closeNow(),
-  // closeSoon(), cancelClose(), contains(node), controls() }.
-  function start(controls) {
-    popover = controls;
+  // `api` is the open popover, from content.js: { card(), opener(),
+  // isRefocus(el), show(card), closeNow(), closeSoon(), cancelClose(),
+  // contains(node), controls() }.
+  function start(api) {
+    popover = api;
     document.addEventListener("pointerover", onPointerOver, true);
     document.addEventListener("pointermove", onPointerMove, true);
     document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) aim(null); }, true);
