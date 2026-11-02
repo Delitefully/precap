@@ -227,10 +227,19 @@
       left = cr.left - gap - w;
       pop.dataset.side = "left";
     } else {
+      // Single-column layouts: under the thumbnail, or above the card when
+      // there is no room below, so the preview player stays uncovered.
       const thumb = card.querySelector("yt-thumbnail-view-model, ytd-thumbnail, #thumbnail") || card;
+      const below = thumb.getBoundingClientRect().bottom + gap;
+      const above = cr.top - gap - h;
       left = Math.min(Math.max(cr.left + (cr.width - w) / 2, margin), vw - w - margin);
-      top = thumb.getBoundingClientRect().bottom + gap;
-      pop.dataset.side = "below";
+      if (below + h > vh - margin && above >= topBound()) {
+        top = above;
+        pop.dataset.side = "above";
+      } else {
+        top = below;
+        pop.dataset.side = "below";
+      }
     }
     top = Math.max(topBound(), Math.min(top, vh - h - margin));
     pop.style.left = Math.round(left) + "px";
