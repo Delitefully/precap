@@ -1,4 +1,4 @@
-// YT TL;DW - page (MAIN world) half.
+// Precap - page (MAIN world) half.
 //
 // Runs inside youtube.com's own JS context so it can read `ytcfg` and call
 // InnerTube with the page's session, the same way YouTube's own code does.

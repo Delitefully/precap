@@ -1,6 +1,6 @@
-<!-- Logo goes here: <p align="center"><img src="docs/logo.png" width="128" alt=""></p> -->
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/logo-lockup-dark.png"><img src="assets/logo-lockup.png" alt="Precap" width="420"></picture></p>
 
-<h1 align="center">YT TL;DW</h1>
+<h1 align="center">Precap</h1>
 
 <p align="center">Hover a video on YouTube for a second and see what it's about, in two or three bullets.<br>
 No API keys: it asks YouTube's own built-in Ask (Gemini) feature.</p>
@@ -33,7 +33,8 @@ Behaviour details:
 
 - Only active on `/` and `/feed/subscriptions` (change `ACTIVE_PATHS` in `content.js` to add pages).
 - The popover appears once the pointer has rested on a card for ~1 s (sweeping across the grid, or the page scrolling under a still pointer, doesn't count), beside the card (right, else left; above or below in one-column layouts) so the thumbnail and its preview stay visible. Its loading placeholder has the shape of a typical answer, so it doesn't jump when the text arrives. Moving into it keeps it open; leaving closes it after a short grace; scrolling with the wheel or pressing Esc closes it.
-- Tabbing to a card with the keyboard opens it the same way, and Esc closes it. Results are also announced to screen readers. Motion is a short fade and scale, reduced to a plain fade with `prefers-reduced-motion`.
+- A small Precap badge (the mark and the name) sits in the popover's top-left corner, so it's clear the summary comes from the extension.
+- Tabbing to a card with the keyboard opens it the same way; Tab again steps into the popover's link or button, and Esc closes it. Results are also announced to screen readers. Motion is a short fade and scale, reduced to a plain fade with `prefers-reduced-motion`.
 - Shorts, ads, playlists/mixes, live and upcoming streams are skipped silently.
 - Results are cached per video in memory until the page reloads, at most 2 requests run at once, at most 10 Ask questions are sent per minute, and a request is cancelled when you move away (unless the answer is about to arrive, then it's kept for the cache). Timeout is 15 s.
 
@@ -42,7 +43,7 @@ Behaviour details:
 | Situation | Message |
 | --- | --- |
 | Signed out | Sign in to see summaries (no request is sent) |
-| Ask not offered to this account, country or language | Ask isn't available for your account or region (remembered for the session) |
+| Ask not offered to this account, country or language | Ask isn't available for your account or region, then in smaller type: This is not an issue with Precap. Precap depends on YouTube's Ask feature to work. **See who can use Ask** (links to [YouTube Help](https://support.google.com/youtube/answer/14110396)). Remembered for the session. |
 | Ask not offered for this video (kids content, live streams, ...) | No summary for this video |
 | Network/HTTP error, timeout, rate limit (YouTube's or the extension's 10 per minute), odd response | Couldn't load summary, with one **Retry** (then: Try again later) |
 
